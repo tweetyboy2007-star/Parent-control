@@ -1,0 +1,12 @@
+{
+  "name": "n-m3u8dl-re-downloader",
+  "version": "1.0.0",
+  "description": "Mac web app for N_m3u8DL-RE downloads",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
