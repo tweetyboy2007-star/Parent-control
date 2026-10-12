@@ -23,7 +23,6 @@ cd "$DIR"
 if ! command -v brew &>/dev/null; then
   info "Installing Homebrew…"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  # Add brew to PATH for Apple Silicon
   if [ -f /opt/homebrew/bin/brew ]; then
     eval "$(/opt/homebrew/bin/brew shellenv)"
   fi
@@ -37,21 +36,67 @@ if ! command -v node &>/dev/null; then
 fi
 ok "Node.js $(node --version)"
 
-# ── 3. N_m3u8DL-RE ─────────────────────────────────────────────────────────────
+# ── 3. N_m3u8DL-RE — download binary from GitHub releases ─────────────────────
 if ! command -v N_m3u8DL-RE &>/dev/null; then
-  info "Installing N_m3u8DL-RE…"
-  brew install n-m3u8dl-re
-fi
-ok "N_m3u8DL-RE $(N_m3u8DL-RE --version 2>&1 | head -1)"
+  info "Installing N_m3u8DL-RE from GitHub releases…"
 
-# ── 4. shaka-packager (required for --use-shaka-packager flag) ─────────────────
+  ARCH="$(uname -m)"
+  if [ "$ARCH" = "arm64" ]; then
+    # Releases use either osx-arm64 or macOS-arm64 depending on version
+    ASSET_PATTERN="arm64"
+  else
+    ASSET_PATTERN="x64\|x86_64"
+  fi
+
+  # Get latest release download URL (macOS .tar.gz assets only)
+  RELEASE_JSON=$(curl -fsSL https://api.github.com/repos/nilaoda/N_m3u8DL-RE/releases/latest)
+  DOWNLOAD_URL=$(echo "$RELEASE_JSON" \
+    | grep -o '"browser_download_url": *"[^"]*"' \
+    | grep -o 'https://[^"]*' \
+    | grep "osx\|macOS\|mac" \
+    | grep -i "${ASSET_PATTERN}" \
+    | grep '\.tar\.gz$' \
+    | head -1)
+
+  if [ -z "$DOWNLOAD_URL" ]; then
+    fail "Could not find N_m3u8DL-RE release for ${ASSET_PATTERN}. Check https://github.com/nilaoda/N_m3u8DL-RE/releases"
+  fi
+
+  TMPDIR_DL=$(mktemp -d)
+  ARCHIVE="$TMPDIR_DL/n_m3u8dl.tar.gz"
+
+  info "Downloading $DOWNLOAD_URL"
+  curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE"
+
+  tar -xzf "$ARCHIVE" -C "$TMPDIR_DL"
+  BINARY=$(find "$TMPDIR_DL" -name "N_m3u8DL-RE" -type f | head -1)
+
+  if [ -z "$BINARY" ]; then
+    fail "Binary not found in archive. Archive contents:"
+  fi
+
+  INSTALL_DIR="/usr/local/bin"
+  if [ -d /opt/homebrew/bin ]; then
+    INSTALL_DIR="/opt/homebrew/bin"
+  fi
+
+  cp "$BINARY" "$INSTALL_DIR/N_m3u8DL-RE"
+  chmod +x "$INSTALL_DIR/N_m3u8DL-RE"
+  rm -rf "$TMPDIR_DL"
+
+  # macOS Gatekeeper — remove quarantine flag
+  xattr -d com.apple.quarantine "$INSTALL_DIR/N_m3u8DL-RE" 2>/dev/null || true
+fi
+ok "N_m3u8DL-RE $(N_m3u8DL-RE --version 2>&1 | head -1 || echo 'installed')"
+
+# ── 4. shaka-packager (for --use-shaka-packager flag) ─────────────────────────
 if ! command -v shaka-packager &>/dev/null && ! command -v packager &>/dev/null; then
   info "Installing shaka-packager…"
   brew install shaka-packager
 fi
 ok "shaka-packager ready"
 
-# ── 5. ffmpeg (used by N_m3u8DL-RE for muxing) ────────────────────────────────
+# ── 5. ffmpeg ──────────────────────────────────────────────────────────────────
 if ! command -v ffmpeg &>/dev/null; then
   info "Installing ffmpeg…"
   brew install ffmpeg
@@ -65,7 +110,7 @@ if [ ! -d node_modules ]; then
 fi
 ok "Node modules ready"
 
-# ── 7. Create a double-clickable launcher in ~/Desktop ─────────────────────────
+# ── 7. Desktop launcher ────────────────────────────────────────────────────────
 LAUNCHER="$HOME/Desktop/N_m3u8DL-RE Downloader.command"
 cat > "$LAUNCHER" <<LAUNCHER_EOF
 #!/usr/bin/env bash
@@ -73,7 +118,7 @@ cd "$DIR"
 ./start.sh
 LAUNCHER_EOF
 chmod +x "$LAUNCHER"
-ok "Launcher created on Desktop"
+ok "Launcher created on Desktop → double-click to start"
 
 echo ""
 echo -e "${BOLD}  All done! Starting the app…${NC}"
