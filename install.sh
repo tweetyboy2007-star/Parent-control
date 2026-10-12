@@ -90,41 +90,47 @@ fi
 ok "N_m3u8DL-RE $(N_m3u8DL-RE --version 2>&1 | head -1 || echo 'installed')"
 
 # ── 4. shaka-packager — download binary from GitHub releases ──────────────────
-if ! command -v shaka-packager &>/dev/null && ! command -v packager &>/dev/null; then
-  info "Installing shaka-packager from GitHub releases…"
+install_shaka() {
+  local pattern="$1"
+  local release_json
+  release_json=$(curl -fsSL --retry 3 \
+    -H "Accept: application/vnd.github+json" \
+    https://api.github.com/repos/shaka-project/shaka-packager/releases/latest 2>/dev/null)
 
-  ARCH="$(uname -m)"
-  if [ "$ARCH" = "arm64" ]; then
-    SP_PATTERN="osx-arm64\|mac-arm64\|macos-arm64"
-  else
-    SP_PATTERN="osx-x64\|mac-x64\|macos-x64"
-  fi
-
-  RELEASE_JSON=$(curl -fsSL https://api.github.com/repos/shaka-project/shaka-packager/releases/latest)
-  # shaka-packager assets are plain binaries (no .tar.gz)
-  SP_URL=$(echo "$RELEASE_JSON" \
+  local url
+  url=$(echo "$release_json" \
     | grep -o '"browser_download_url": *"[^"]*"' \
     | grep -o 'https://[^"]*' \
-    | grep -iE "${SP_PATTERN}" \
-    | grep -v '\.sha1$\|\.sha256$' \
+    | grep -iE "$pattern" \
+    | grep -vE '\.(sha1|sha256|sig)$' \
     | head -1)
 
-  if [ -z "$SP_URL" ]; then
-    info "shaka-packager binary not found for this arch — skipping (optional)"
-  else
-    INSTALL_DIR="/usr/local/bin"
-    [ -d /opt/homebrew/bin ] && INSTALL_DIR="/opt/homebrew/bin"
+  [ -z "$url" ] && return 1
 
-    curl -fsSL "$SP_URL" -o "$INSTALL_DIR/shaka-packager"
-    chmod +x "$INSTALL_DIR/shaka-packager"
-    xattr -d com.apple.quarantine "$INSTALL_DIR/shaka-packager" 2>/dev/null || true
+  local install_dir="/usr/local/bin"
+  [ -d /opt/homebrew/bin ] && install_dir="/opt/homebrew/bin"
+
+  info "Downloading shaka-packager from $url"
+  curl -fsSL --retry 3 "$url" -o "$install_dir/shaka-packager" || return 1
+  chmod +x "$install_dir/shaka-packager"
+  xattr -d com.apple.quarantine "$install_dir/shaka-packager" 2>/dev/null || true
+  return 0
+}
+
+if ! command -v shaka-packager &>/dev/null; then
+  info "Installing shaka-packager from GitHub releases…"
+  ARCH="$(uname -m)"
+  if [ "$ARCH" = "arm64" ]; then
+    # Try native arm64 first; fall back to x64 (Rosetta runs it fine on Apple Silicon)
+    install_shaka "osx-arm64|mac-arm64|macos-arm64" \
+      || install_shaka "osx-x64|mac-x64|macos-x64" \
+      || fail "Could not download shaka-packager. Download manually from https://github.com/shaka-project/shaka-packager/releases and put it in /usr/local/bin/shaka-packager"
+  else
+    install_shaka "osx-x64|mac-x64|macos-x64" \
+      || fail "Could not download shaka-packager. Download manually from https://github.com/shaka-project/shaka-packager/releases and put it in /usr/local/bin/shaka-packager"
   fi
 fi
-if command -v shaka-packager &>/dev/null; then
-  ok "shaka-packager $(shaka-packager --version 2>&1 | head -1 || echo 'installed')"
-else
-  ok "shaka-packager skipped (optional — only needed for --use-shaka-packager)"
-fi
+ok "shaka-packager $(shaka-packager --version 2>&1 | head -1 || echo 'installed')"
 
 # ── 5. ffmpeg ──────────────────────────────────────────────────────────────────
 if ! command -v ffmpeg &>/dev/null; then
