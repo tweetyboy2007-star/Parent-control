@@ -89,12 +89,42 @@ if ! command -v N_m3u8DL-RE &>/dev/null; then
 fi
 ok "N_m3u8DL-RE $(N_m3u8DL-RE --version 2>&1 | head -1 || echo 'installed')"
 
-# ── 4. shaka-packager (for --use-shaka-packager flag) ─────────────────────────
+# ── 4. shaka-packager — download binary from GitHub releases ──────────────────
 if ! command -v shaka-packager &>/dev/null && ! command -v packager &>/dev/null; then
-  info "Installing shaka-packager…"
-  brew install shaka-packager
+  info "Installing shaka-packager from GitHub releases…"
+
+  ARCH="$(uname -m)"
+  if [ "$ARCH" = "arm64" ]; then
+    SP_PATTERN="osx-arm64\|mac-arm64\|macos-arm64"
+  else
+    SP_PATTERN="osx-x64\|mac-x64\|macos-x64"
+  fi
+
+  RELEASE_JSON=$(curl -fsSL https://api.github.com/repos/shaka-project/shaka-packager/releases/latest)
+  # shaka-packager assets are plain binaries (no .tar.gz)
+  SP_URL=$(echo "$RELEASE_JSON" \
+    | grep -o '"browser_download_url": *"[^"]*"' \
+    | grep -o 'https://[^"]*' \
+    | grep -iE "${SP_PATTERN}" \
+    | grep -v '\.sha1$\|\.sha256$' \
+    | head -1)
+
+  if [ -z "$SP_URL" ]; then
+    info "shaka-packager binary not found for this arch — skipping (optional)"
+  else
+    INSTALL_DIR="/usr/local/bin"
+    [ -d /opt/homebrew/bin ] && INSTALL_DIR="/opt/homebrew/bin"
+
+    curl -fsSL "$SP_URL" -o "$INSTALL_DIR/shaka-packager"
+    chmod +x "$INSTALL_DIR/shaka-packager"
+    xattr -d com.apple.quarantine "$INSTALL_DIR/shaka-packager" 2>/dev/null || true
+  fi
 fi
-ok "shaka-packager ready"
+if command -v shaka-packager &>/dev/null; then
+  ok "shaka-packager $(shaka-packager --version 2>&1 | head -1 || echo 'installed')"
+else
+  ok "shaka-packager skipped (optional — only needed for --use-shaka-packager)"
+fi
 
 # ── 5. ffmpeg ──────────────────────────────────────────────────────────────────
 if ! command -v ffmpeg &>/dev/null; then
