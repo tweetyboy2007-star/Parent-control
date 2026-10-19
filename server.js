@@ -160,6 +160,42 @@ app.delete('/api/downloads/completed', (req, res) => {
     res.json({ ok: true });
 });
 
+// CH341A programmer: detect connection and flash chip
+app.get('/api/ch341/detect', (req, res) => {
+    const env = {
+        ...process.env,
+        PATH: [process.env.PATH, '/usr/local/bin', '/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/bin', '/bin'].join(':'),
+    };
+
+    exec('flashrom -p ch341a_spi 2>&1', { env, timeout: 15000 }, (err, stdout) => {
+        const output = (stdout || '').trim();
+
+        // Check if flashrom is installed
+        if (err && err.code === 127) {
+            return res.json({ connected: false, chip: null, output, error: 'flashrom not installed. Install with: brew install flashrom' });
+        }
+
+        // Programmer not found / USB not connected
+        if (output.includes('Could not connect') || output.includes('No device found') || output.includes('Cannot open USB device')) {
+            return res.json({ connected: false, chip: null, output, error: 'CH341A programmer not detected. Check USB connection.' });
+        }
+
+        // Flash chip found
+        const chipMatch = output.match(/Found .+ flash chip "([^"]+)"/i);
+        if (chipMatch) {
+            return res.json({ connected: true, chip: chipMatch[1], output });
+        }
+
+        // Programmer found but no flash chip
+        if (output.includes('No EEPROM') || output.includes('No flash device')) {
+            return res.json({ connected: true, chip: null, output, error: 'Programmer connected but no flash chip detected.' });
+        }
+
+        // Unknown output — return as-is
+        return res.json({ connected: true, chip: null, output });
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`✓  N_m3u8DL-RE Downloader → http://localhost:${PORT}`);
     exec(`open http://localhost:${PORT}`);

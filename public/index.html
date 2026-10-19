@@ -314,6 +314,72 @@
     text-underline-offset: 2px;
   }
   .finder-btn:hover { color: var(--accent-hover); }
+
+  /* CH341 programmer card */
+  .ch341-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ch341-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ch341-status {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .ch341-chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .ch341-output {
+    margin-top: 12px;
+    background: #0d1117;
+    border-radius: 7px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    padding: 12px 14px;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #c9d1d9;
+    display: none;
+  }
+
+  .ch341-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  .ch341-badge.ok {
+    background: rgba(62,207,110,0.12);
+    color: var(--green);
+  }
+
+  .ch341-badge.err {
+    background: rgba(240,84,79,0.12);
+    color: var(--red);
+  }
+
+  .ch341-badge.idle {
+    background: var(--surface2);
+    color: var(--muted);
+  }
 </style>
 </head>
 <body>
@@ -325,6 +391,22 @@
 </header>
 
 <main>
+
+  <!-- CH341 Programmer -->
+  <div class="card">
+    <div class="card-header">🔌 CH341A Programmer</div>
+    <div class="card-body">
+      <div class="ch341-row">
+        <div class="ch341-info">
+          <div id="ch341-status" class="ch341-status" style="color:var(--muted)">Press "Detect" to check programmer connection</div>
+          <div id="ch341-chip" class="ch341-chip" style="display:none"></div>
+        </div>
+        <span id="ch341-badge" class="ch341-badge idle">— Idle</span>
+        <button id="ch341-btn" class="btn btn-secondary" onclick="detectCH341()">🔍 Detect Flash</button>
+      </div>
+      <pre id="ch341-output" class="ch341-output"></pre>
+    </div>
+  </div>
 
   <!-- Command input -->
   <div class="card">
@@ -570,6 +652,60 @@ function fmtTime(ts) {
 
 function esc(str) {
   return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function detectCH341() {
+  const btn = document.getElementById('ch341-btn');
+  const statusEl = document.getElementById('ch341-status');
+  const chipEl = document.getElementById('ch341-chip');
+  const badgeEl = document.getElementById('ch341-badge');
+  const outputEl = document.getElementById('ch341-output');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Detecting…';
+  statusEl.textContent = 'Scanning USB for CH341A programmer…';
+  statusEl.style.color = 'var(--yellow)';
+  chipEl.style.display = 'none';
+  badgeEl.className = 'ch341-badge idle';
+  badgeEl.textContent = '⏳ Scanning';
+  outputEl.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/ch341/detect');
+    const data = await r.json();
+
+    outputEl.textContent = data.output || '';
+    outputEl.style.display = data.output ? 'block' : 'none';
+
+    if (data.connected && data.chip) {
+      statusEl.textContent = 'Programmer connected — flash chip detected';
+      statusEl.style.color = 'var(--green)';
+      chipEl.textContent = '🗄 ' + data.chip;
+      chipEl.style.display = 'block';
+      badgeEl.className = 'ch341-badge ok';
+      badgeEl.textContent = '✓ ' + data.chip;
+    } else if (data.connected && !data.chip) {
+      statusEl.textContent = data.error || 'Programmer connected, no flash chip found';
+      statusEl.style.color = 'var(--yellow)';
+      chipEl.style.display = 'none';
+      badgeEl.className = 'ch341-badge err';
+      badgeEl.textContent = '⚠ No chip';
+    } else {
+      statusEl.textContent = data.error || 'CH341A not detected';
+      statusEl.style.color = 'var(--red)';
+      chipEl.style.display = 'none';
+      badgeEl.className = 'ch341-badge err';
+      badgeEl.textContent = '✗ Not found';
+    }
+  } catch (e) {
+    statusEl.textContent = 'Request failed: ' + e.message;
+    statusEl.style.color = 'var(--red)';
+    badgeEl.className = 'ch341-badge err';
+    badgeEl.textContent = '✗ Error';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔍 Detect Flash';
 }
 
 init();
