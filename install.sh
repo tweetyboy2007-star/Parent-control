@@ -139,14 +139,35 @@ if ! command -v ffmpeg &>/dev/null; then
 fi
 ok "ffmpeg $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')"
 
-# ── 6. npm install ─────────────────────────────────────────────────────────────
+# ── 6. Python 3 ───────────────────────────────────────────────────────────────
+if ! command -v python3 &>/dev/null; then
+  info "Installing Python 3…"
+  brew install python
+fi
+ok "Python $(python3 --version)"
+
+# ── 6a. openai-whisper (auto-subtitles) ────────────────────────────────────────
+if ! python3 -c "import whisper" 2>/dev/null; then
+  info "Installing openai-whisper…"
+  pip3 install -q openai-whisper
+fi
+ok "openai-whisper ready"
+
+# ── 6b. edge-tts (auto background voice) ──────────────────────────────────────
+if ! command -v edge-tts &>/dev/null && ! python3 -m edge_tts --help &>/dev/null 2>&1; then
+  info "Installing edge-tts…"
+  pip3 install -q edge-tts
+fi
+ok "edge-tts ready"
+
+# ── 8. npm install ─────────────────────────────────────────────────────────────
 if [ ! -d node_modules ]; then
   info "Installing Node dependencies…"
   npm install --silent
 fi
 ok "Node modules ready"
 
-# ── 7. Desktop launcher ────────────────────────────────────────────────────────
+# ── 9. Desktop launcher ────────────────────────────────────────────────────────
 LAUNCHER="$HOME/Desktop/N_m3u8DL-RE Downloader.command"
 cat > "$LAUNCHER" <<LAUNCHER_EOF
 #!/usr/bin/env bash

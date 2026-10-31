@@ -14,6 +14,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 const downloads = {};
 let defaultDestination = path.join(os.homedir(), 'Downloads');
 
+// ── Recap jobs ─────────────────────────────────────────────────────────────────
+const recapJobs = {};
+
 function validateCommand(cmd) {
     return /^(N_m3u8DL-RE|N_m3u8DL_RE|\.\/N_m3u8DL-RE)\s/.test(cmd.trim());
 }
@@ -159,6 +162,181 @@ app.delete('/api/downloads/completed', (req, res) => {
     });
     res.json({ ok: true });
 });
+
+// ── Recap: helpers ────────────────────────────────────────────────────────────
+
+function recapEnv() {
+    return {
+        ...process.env,
+        PATH: [
+            process.env.PATH,
+            '/usr/local/bin',
+            '/opt/homebrew/bin',
+            '/opt/homebrew/sbin',
+            path.join(os.homedir(), 'Library/Python/3.11/bin'),
+            path.join(os.homedir(), 'Library/Python/3.12/bin'),
+            path.join(os.homedir(), '.local/bin'),
+            '/usr/bin',
+        ].join(':'),
+    };
+}
+
+function startRecapJob(cmd, args, opts) {
+    const id = crypto.randomUUID();
+    const job = { id, cmd, status: 'running', output: [], startTime: Date.now(), ...opts };
+    recapJobs[id] = job;
+
+    const child = spawn(cmd, args, { env: recapEnv() });
+    job._child = child;
+
+    child.stdout.on('data', (d) => job.output.push({ t: 'o', s: d.toString() }));
+    child.stderr.on('data', (d) => job.output.push({ t: 'e', s: d.toString() }));
+    child.on('close', (code) => {
+        job.status = code === 0 ? 'done' : code === null ? 'cancelled' : 'failed';
+        job.exitCode = code;
+        job._child = null;
+    });
+
+    return id;
+}
+
+// ── Recap: subtitles (Whisper) ────────────────────────────────────────────────
+
+app.post('/api/recap/subtitles', (req, res) => {
+    const { filePath, model = 'base', language = 'auto', outputDir } = req.body;
+
+    if (!filePath) return res.status(400).json({ error: 'filePath is required' });
+    const expanded = filePath.startsWith('~') ? path.join(os.homedir(), filePath.slice(1)) : filePath;
+    if (!fs.existsSync(expanded)) return res.status(400).json({ error: `File not found: ${expanded}` });
+
+    const saveDir = outputDir
+        ? (outputDir.startsWith('~') ? path.join(os.homedir(), outputDir.slice(1)) : outputDir)
+        : path.dirname(expanded);
+
+    const args = [expanded, '--model', model, '--output_format', 'srt', '--output_dir', saveDir];
+    if (language && language !== 'auto') args.push('--language', language);
+
+    const id = startRecapJob('whisper', args, {
+        type: 'subtitles',
+        filePath: expanded,
+        outputDir: saveDir,
+        model,
+    });
+
+    res.json({ id });
+});
+
+// ── Recap: voice (edge-tts) ───────────────────────────────────────────────────
+
+function stripSrt(srt) {
+    return srt
+        .replace(/^\d+\s*$/gm, '')
+        .replace(/^\d{2}:\d{2}:\d{2},\d{3} --> .+$/gm, '')
+        .replace(/<[^>]+>/g, '')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean)
+        .join(' ');
+}
+
+app.post('/api/recap/voice', (req, res) => {
+    const { text, srtPath, voice = 'en-US-AriaNeural', outputPath } = req.body;
+
+    let narrationText = text || '';
+
+    if (!narrationText && srtPath) {
+        const srt = srtPath.startsWith('~') ? path.join(os.homedir(), srtPath.slice(1)) : srtPath;
+        if (!fs.existsSync(srt)) return res.status(400).json({ error: `SRT not found: ${srt}` });
+        narrationText = stripSrt(fs.readFileSync(srt, 'utf8'));
+    }
+
+    if (!narrationText) return res.status(400).json({ error: 'Provide text or srtPath' });
+    if (narrationText.length > 50000) narrationText = narrationText.slice(0, 50000);
+
+    const out = outputPath
+        ? (outputPath.startsWith('~') ? path.join(os.homedir(), outputPath.slice(1)) : outputPath)
+        : path.join(os.homedir(), 'Downloads', `recap-voice-${Date.now()}.mp3`);
+
+    const args = ['--voice', voice, '--text', narrationText, '--write-media', out];
+    const id = startRecapJob('edge-tts', args, {
+        type: 'voice',
+        outputPath: out,
+        voice,
+    });
+
+    res.json({ id, outputPath: out });
+});
+
+// ── Recap: list voices ────────────────────────────────────────────────────────
+
+app.get('/api/recap/voices', (req, res) => {
+    exec('edge-tts --list-voices', { env: recapEnv() }, (err, stdout) => {
+        if (err) return res.status(500).json({ error: 'edge-tts not found. Run install.sh first.' });
+        const lines = stdout.trim().split('\n').slice(1);
+        const voices = lines.map(l => {
+            const parts = l.trim().split(/\s+/);
+            return { name: parts[0], locale: parts[1], gender: parts[2] };
+        }).filter(v => v.name);
+        res.json(voices);
+    });
+});
+
+// ── Recap: job streaming (SSE) ────────────────────────────────────────────────
+
+app.get('/api/recap/job/:id/stream', (req, res) => {
+    const job = recapJobs[req.params.id];
+    if (!job) return res.status(404).end();
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    let sent = 0;
+    const flush = () => {
+        while (sent < job.output.length) {
+            res.write(`data: ${JSON.stringify(job.output[sent++])}\n\n`);
+        }
+        if (job.status !== 'running') {
+            res.write(`event: done\ndata: ${JSON.stringify({ status: job.status, outputPath: job.outputPath, outputDir: job.outputDir })}\n\n`);
+            clearInterval(timer);
+            res.end();
+        }
+    };
+
+    const timer = setInterval(flush, 150);
+    flush();
+    req.on('close', () => clearInterval(timer));
+});
+
+app.get('/api/recap/jobs', (req, res) => {
+    res.json(
+        Object.values(recapJobs)
+            .sort((a, b) => b.startTime - a.startTime)
+            .map(({ id, type, status, startTime, outputPath, outputDir, filePath, model, voice }) => ({
+                id, type, status, startTime, outputPath, outputDir, filePath, model, voice,
+            }))
+    );
+});
+
+app.post('/api/recap/job/:id/cancel', (req, res) => {
+    const job = recapJobs[req.params.id];
+    if (!job) return res.status(404).json({ error: 'Not found' });
+    if (job._child) { job._child.kill('SIGTERM'); job.status = 'cancelled'; }
+    res.json({ ok: true });
+});
+
+app.post('/api/open-file', (req, res) => {
+    const { filePath } = req.body;
+    if (!filePath) return res.status(400).json({ error: 'No path' });
+    const p = filePath.startsWith('~') ? path.join(os.homedir(), filePath.slice(1)) : filePath;
+    exec(`open "${p}"`, (err) => {
+        if (err) return res.status(400).json({ error: 'Could not open file' });
+        res.json({ ok: true });
+    });
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
     console.log(`✓  N_m3u8DL-RE Downloader → http://localhost:${PORT}`);

@@ -244,6 +244,108 @@
     50% { opacity: 0.4; }
   }
 
+  /* Recap Tools */
+  .recap-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 620px) { .recap-grid { grid-template-columns: 1fr; } }
+
+  .recap-panel {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .recap-panel h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .recap-panel h3 .icon {
+    font-size: 16px;
+  }
+
+  .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .form-row label {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  .form-row input, .form-row select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+
+  .form-row input:focus, .form-row select:focus { border-color: var(--accent); }
+
+  .form-row select option { background: var(--surface2); }
+
+  .recap-terminal {
+    background: #0d1117;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    min-height: 80px;
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #c9d1d9;
+    display: none;
+  }
+
+  .recap-terminal.visible { display: block; }
+  .recap-terminal .err { color: #f85149; }
+  .recap-terminal .dim { color: #484f58; }
+
+  .recap-status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--muted);
+    min-height: 20px;
+  }
+
+  .recap-result {
+    background: rgba(62,207,110,0.08);
+    border: 1px solid rgba(62,207,110,0.2);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--green);
+    display: none;
+    word-break: break-all;
+  }
+
+  .recap-result.visible { display: block; }
+
   /* Downloads history */
   .dl-list { display: flex; flex-direction: column; gap: 1px; }
 
@@ -362,6 +464,114 @@
       <span id="status-text">Idle</span>
       <div style="flex:1"></div>
       <button id="open-finder-btn" class="finder-btn" style="display:none" onclick="openInFinder()">Open in Finder ↗</button>
+    </div>
+  </div>
+
+  <!-- Recap Tools -->
+  <div class="card">
+    <div class="card-header">🎬 Movie Recap Tools</div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- shared file path -->
+      <div class="form-row">
+        <label>Video file path (from Downloads or anywhere on disk)</label>
+        <input id="recap-file" type="text" placeholder="~/Downloads/movie.mkv" />
+      </div>
+
+      <div class="recap-grid">
+
+        <!-- ── Auto Subtitles ── -->
+        <div class="recap-panel">
+          <h3><span class="icon">📝</span> Auto Subtitles</h3>
+          <div class="form-row">
+            <label>Whisper model</label>
+            <select id="whisper-model">
+              <option value="tiny">tiny (fastest, lower accuracy)</option>
+              <option value="base" selected>base (recommended)</option>
+              <option value="small">small (better accuracy)</option>
+              <option value="medium">medium (high accuracy)</option>
+              <option value="large">large (best, slowest)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Language</label>
+            <select id="whisper-lang">
+              <option value="auto">auto-detect</option>
+              <option value="en">English</option>
+              <option value="ja">Japanese</option>
+              <option value="zh">Chinese</option>
+              <option value="ko">Korean</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="es">Spanish</option>
+              <option value="th">Thai</option>
+              <option value="ar">Arabic</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Output folder (leave blank = same folder as video)</label>
+            <input id="whisper-out" type="text" placeholder="~/Downloads" />
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="sub-btn" class="btn btn-primary" style="font-size:13px;padding:8px 16px;" onclick="runSubtitles()">Generate Subtitles</button>
+            <button id="sub-cancel" class="btn btn-danger" style="display:none;padding:6px 12px;font-size:12px;" onclick="cancelRecapJob('sub')">Cancel</button>
+          </div>
+          <div class="recap-status" id="sub-status"></div>
+          <div id="sub-term" class="recap-terminal"></div>
+          <div id="sub-result" class="recap-result"></div>
+        </div>
+
+        <!-- ── Auto Background Voice ── -->
+        <div class="recap-panel">
+          <h3><span class="icon">🔊</span> Auto Background Voice</h3>
+          <div class="form-row">
+            <label>Source: SRT file <small style="color:var(--muted)">(auto-fill after subtitles) or paste text below</small></label>
+            <input id="voice-srt" type="text" placeholder="~/Downloads/movie.srt" />
+          </div>
+          <div class="form-row">
+            <label>Or paste narration text directly</label>
+            <textarea id="voice-text" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 10px;width:100%;min-height:72px;resize:vertical;outline:none;" placeholder="Paste text to narrate…"></textarea>
+          </div>
+          <div class="form-row">
+            <label>Voice</label>
+            <select id="tts-voice">
+              <option value="en-US-AriaNeural">en-US Aria (Female)</option>
+              <option value="en-US-GuyNeural">en-US Guy (Male)</option>
+              <option value="en-GB-SoniaNeural">en-GB Sonia (Female)</option>
+              <option value="en-GB-RyanNeural">en-GB Ryan (Male)</option>
+              <option value="ja-JP-NanamiNeural">ja-JP Nanami (Female)</option>
+              <option value="ja-JP-KeitaNeural">ja-JP Keita (Male)</option>
+              <option value="zh-CN-XiaoxiaoNeural">zh-CN Xiaoxiao (Female)</option>
+              <option value="zh-CN-YunxiNeural">zh-CN Yunxi (Male)</option>
+              <option value="ko-KR-SunHiNeural">ko-KR SunHi (Female)</option>
+              <option value="th-TH-PremwadeeNeural">th-TH Premwadee (Female)</option>
+              <option value="fr-FR-DeniseNeural">fr-FR Denise (Female)</option>
+              <option value="de-DE-KatjaNeural">de-DE Katja (Female)</option>
+              <option value="es-ES-ElviraNeural">es-ES Elvira (Female)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Output MP3 path (leave blank = ~/Downloads/recap-voice.mp3)</label>
+            <input id="voice-out" type="text" placeholder="~/Downloads/recap-voice.mp3" />
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="voice-btn" class="btn btn-primary" style="font-size:13px;padding:8px 16px;" onclick="runVoice()">Generate Voice</button>
+            <button id="voice-cancel" class="btn btn-danger" style="display:none;padding:6px 12px;font-size:12px;" onclick="cancelRecapJob('voice')">Cancel</button>
+          </div>
+          <div class="recap-status" id="voice-status"></div>
+          <div id="voice-term" class="recap-terminal"></div>
+          <div id="voice-result" class="recap-result"></div>
+        </div>
+
+      </div><!-- .recap-grid -->
+
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;">
+        <strong style="color:var(--text)">Setup required:</strong>
+        Subtitles use <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">openai-whisper</code> (install via <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">pip install openai-whisper</code>).
+        Voice uses <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">edge-tts</code> (install via <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">pip install edge-tts</code>).
+        Both are installed automatically by <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">install.sh</code>.
+      </div>
+
     </div>
   </div>
 
@@ -574,6 +784,144 @@ function esc(str) {
 
 init();
 setInterval(refreshHistory, 3000);
+
+// ── Recap Tools ──────────────────────────────────────────────────────────────
+
+const recapState = { sub: null, voice: null };
+
+async function runSubtitles() {
+  const filePath = document.getElementById('recap-file').value.trim();
+  const model    = document.getElementById('whisper-model').value;
+  const language = document.getElementById('whisper-lang').value;
+  const outputDir = document.getElementById('whisper-out').value.trim();
+
+  if (!filePath) { alert('Paste the video file path first.'); return; }
+
+  resetRecapPanel('sub');
+  setRecapStatus('sub', 'running', 'Running Whisper…');
+  toggleRecapButtons('sub', true);
+
+  const r = await fetch('/api/recap/subtitles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath, model, language, outputDir: outputDir || undefined }),
+  });
+  const data = await r.json();
+  if (!r.ok) { setRecapStatus('sub', 'failed', data.error); toggleRecapButtons('sub', false); return; }
+
+  recapState.sub = data.id;
+  streamRecapJob('sub', data.id);
+}
+
+async function runVoice() {
+  const srtPath = document.getElementById('voice-srt').value.trim();
+  const text    = document.getElementById('voice-text').value.trim();
+  const voice   = document.getElementById('tts-voice').value;
+  const outputPath = document.getElementById('voice-out').value.trim();
+
+  if (!srtPath && !text) { alert('Provide an SRT file path or paste text to narrate.'); return; }
+
+  resetRecapPanel('voice');
+  setRecapStatus('voice', 'running', 'Generating voice…');
+  toggleRecapButtons('voice', true);
+
+  const r = await fetch('/api/recap/voice', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      srtPath: srtPath || undefined,
+      text: text || undefined,
+      voice,
+      outputPath: outputPath || undefined,
+    }),
+  });
+  const data = await r.json();
+  if (!r.ok) { setRecapStatus('voice', 'failed', data.error); toggleRecapButtons('voice', false); return; }
+
+  recapState.voice = data.id;
+  streamRecapJob('voice', data.id);
+}
+
+function streamRecapJob(key, id) {
+  const term = document.getElementById(`${key}-term`);
+  term.innerHTML = '';
+  term.classList.add('visible');
+
+  const es = new EventSource(`/api/recap/job/${id}/stream`);
+
+  es.onmessage = (e) => {
+    const { t, s } = JSON.parse(e.data);
+    const span = document.createElement('span');
+    if (t === 'e') span.className = 'err';
+    span.textContent = s;
+    term.appendChild(span);
+    if (term.scrollHeight - term.scrollTop - term.clientHeight < 80) term.scrollTop = term.scrollHeight;
+  };
+
+  es.addEventListener('done', (e) => {
+    const { status, outputPath, outputDir } = JSON.parse(e.data);
+    es.close();
+    toggleRecapButtons(key, false);
+
+    if (status === 'done') {
+      setRecapStatus(key, 'done', 'Done ✓');
+      const out = outputPath || outputDir;
+      const resultEl = document.getElementById(`${key}-result`);
+      resultEl.innerHTML = `Output: <strong>${esc(out || 'check output folder')}</strong>
+        <button class="finder-btn" style="margin-left:10px;" onclick="openFile('${esc(out || '')}')">Open ↗</button>`;
+      resultEl.classList.add('visible');
+
+      // Auto-fill SRT path into voice panel
+      if (key === 'sub' && outputDir) {
+        const fileBase = document.getElementById('recap-file').value.trim().replace(/.*[/\\]/, '').replace(/\.[^.]+$/, '');
+        document.getElementById('voice-srt').value = (outputDir || '~/Downloads') + '/' + fileBase + '.srt';
+      }
+    } else {
+      setRecapStatus(key, status, `Finished: ${status}`);
+    }
+  });
+
+  es.onerror = () => {
+    es.close();
+    setRecapStatus(key, 'failed', 'Connection lost');
+    toggleRecapButtons(key, false);
+  };
+}
+
+async function cancelRecapJob(key) {
+  const id = recapState[key];
+  if (!id) return;
+  await fetch(`/api/recap/job/${id}/cancel`, { method: 'POST' });
+  toggleRecapButtons(key, false);
+  setRecapStatus(key, 'cancelled', 'Cancelled');
+}
+
+async function openFile(p) {
+  if (!p) return;
+  await fetch('/api/open-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath: p }),
+  });
+}
+
+function resetRecapPanel(key) {
+  document.getElementById(`${key}-term`).innerHTML = '';
+  document.getElementById(`${key}-term`).classList.remove('visible');
+  document.getElementById(`${key}-result`).classList.remove('visible');
+  document.getElementById(`${key}-status`).innerHTML = '';
+}
+
+function setRecapStatus(key, state, text) {
+  const colors = { running: 'var(--yellow)', done: 'var(--green)', failed: 'var(--red)', cancelled: 'var(--muted)' };
+  const el = document.getElementById(`${key}-status`);
+  el.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${colors[state]||'var(--muted)'};flex-shrink:0;display:inline-block;"></span> ${esc(text)}`;
+}
+
+function toggleRecapButtons(key, running) {
+  document.getElementById(`${key}-btn`).disabled = running;
+  document.getElementById(`${key}-cancel`).style.display = running ? 'inline-flex' : 'none';
+}
 </script>
 </body>
 </html>
