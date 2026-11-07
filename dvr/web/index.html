@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DVR - 16 Channel Live View</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --accent: #00b4d8;
+    --danger: #ef233c;
+    --success: #2ecc71;
+    --warning: #f39c12;
+    --text: #e0e0e0;
+    --text-dim: #888;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .nav-btn { background: var(--border); color: var(--text); border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-block; }
+  .nav-btn:hover { background: var(--accent); color: #000; }
+  .status-bar { font-size: 12px; color: var(--text-dim); }
+  #wsStatus { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 4px; }
+  #wsStatus.connected { background: var(--success); }
+
+  .toolbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .grid-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .grid-btn.active { border-color: var(--accent); color: var(--accent); }
+  #diskInfo { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+
+  .grid-container { flex: 1; overflow: hidden; padding: 4px; display: grid; gap: 3px; }
+  .grid-16 { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); }
+  .grid-9  { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+  .grid-4  { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+  .grid-1  { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+
+  .channel-cell {
+    background: #111;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .channel-cell:hover { border-color: var(--accent); }
+  .channel-cell.selected { border-color: var(--accent); border-width: 2px; }
+  .channel-cell.offline { opacity: 0.5; }
+
+  .channel-cell img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .channel-cell video {
+    width: 100%; height: 100%; object-fit: cover; display: block; background: #000;
+  }
+  .channel-overlay {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
+    padding: 6px 8px 4px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .channel-name { font-size: 11px; font-weight: 600; color: #fff; }
+  .channel-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; }
+  .channel-status.online  { background: var(--success); color: #000; }
+  .channel-status.offline { background: var(--danger); color: #fff; }
+  .channel-status.error   { background: var(--warning); color: #000; }
+  .channel-num { position: absolute; top: 5px; left: 5px; font-size: 10px; background: rgba(0,0,0,0.7); color: var(--accent); padding: 1px 5px; border-radius: 3px; }
+
+  /* Fullscreen modal */
+  #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; flex-direction: column; }
+  #modal.show { display: flex; }
+  #modal-header { background: var(--surface); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; }
+  #modal-title { font-size: 16px; font-weight: 600; }
+  #modal-close { background: none; border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+  #modal-video { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; }
+  #modal-video video { max-width: 100%; max-height: 100%; width: 100%; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.14/dist/hls.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="logo">&#9654; DVR SYSTEM</div>
+  <div class="header-right">
+    <span class="status-bar"><span id="wsStatus"></span><span id="wsText">Connecting...</span></span>
+    <a href="playback.html" class="nav-btn">Playback</a>
+    <a href="settings.html" class="nav-btn">Settings</a>
+  </div>
+</header>
+
+<div class="toolbar">
+  <button class="grid-btn" data-grid="16" onclick="setGrid(16)">16</button>
+  <button class="grid-btn" data-grid="9"  onclick="setGrid(9)">9</button>
+  <button class="grid-btn" data-grid="4"  onclick="setGrid(4)">4</button>
+  <button class="grid-btn" data-grid="1"  onclick="setGrid(1)">1</button>
+  <span id="diskInfo">Loading storage...</span>
+</div>
+
+<div class="grid-container grid-16" id="grid"></div>
+
+<!-- Fullscreen Modal -->
+<div id="modal">
+  <div id="modal-header">
+    <span id="modal-title"></span>
+    <div style="display:flex;gap:8px">
+      <button class="nav-btn" onclick="takeSnapshot()">Snapshot</button>
+      <button id="modal-close" onclick="closeModal()">&#10005; Close</button>
+    </div>
+  </div>
+  <div id="modal-video">
+    <video id="modal-player" controls autoplay muted playsinline></video>
+  </div>
+</div>
+
+<script>
+const API = '';
+let ws = null;
+let channels = [];
+let currentGrid = 16;
+let hlsInstances = {};
+let modalHls = null;
+let selectedChannelId = null;
+let snapTimers = {};
+
+function setGrid(n) {
+  currentGrid = n;
+  document.querySelectorAll('.grid-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.grid) === n));
+  const grid = document.getElementById('grid');
+  grid.className = `grid-container grid-${n}`;
+
+  // Destroy HLS for cells going out of view
+  Object.keys(hlsInstances).forEach(id => {
+    const idx = channels.findIndex(c => c.id === parseInt(id));
+    if (idx >= n) destroyHls(id);
+  });
+
+  renderGrid();
+}
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  const visible = channels.slice(0, currentGrid);
+
+  grid.innerHTML = '';
+  visible.forEach(ch => {
+    const cell = document.createElement('div');
+    cell.className = `channel-cell ${ch.status}`;
+    cell.id = `cell-${ch.id}`;
+    cell.innerHTML = `
+      <img id="snap-${ch.id}" src="/api/channels/${ch.id}/snapshot?_=${Date.now()}" alt="${ch.name}" onerror="this.style.display='none'">
+      <div class="channel-num">CH${ch.id}</div>
+      <div class="channel-overlay">
+        <span class="channel-name">${ch.name}</span>
+        <span class="channel-status ${ch.status}">${ch.status.toUpperCase()}</span>
+      </div>
+    `;
+    cell.onclick = () => openModal(ch);
+    grid.appendChild(cell);
+    startSnapRefresh(ch.id);
+  });
+}
+
+function startSnapRefresh(channelId) {
+  if (snapTimers[channelId]) clearInterval(snapTimers[channelId]);
+  snapTimers[channelId] = setInterval(() => {
+    const img = document.getElementById(`snap-${channelId}`);
+    if (img) img.src = `/api/channels/${channelId}/snapshot?_=${Date.now()}`;
+  }, 5000);
+}
+
+function openModal(ch) {
+  selectedChannelId = ch.id;
+  document.getElementById('modal-title').textContent = `CH${ch.id} — ${ch.name}`;
+  document.getElementById('modal').classList.add('show');
+
+  const video = document.getElementById('modal-player');
+  video.src = '';
+  if (modalHls) { modalHls.destroy(); modalHls = null; }
+
+  if (ch.status === 'online' || ch.status !== 'offline') {
+    const src = `/live/ch${ch.id}/live.m3u8`;
+    if (Hls.isSupported()) {
+      modalHls = new Hls({ lowLatencyMode: true });
+      modalHls.loadSource(src);
+      modalHls.attachMedia(video);
+      modalHls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src;
+      video.play().catch(() => {});
+    }
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  const video = document.getElementById('modal-player');
+  video.pause();
+  video.src = '';
+  if (modalHls) { modalHls.destroy(); modalHls = null; }
+  selectedChannelId = null;
+}
+
+function destroyHls(channelId) {
+  if (hlsInstances[channelId]) {
+    hlsInstances[channelId].destroy();
+    delete hlsInstances[channelId];
+  }
+}
+
+function takeSnapshot() {
+  if (!selectedChannelId) return;
+  const a = document.createElement('a');
+  a.href = `/api/channels/${selectedChannelId}/snapshot?_=${Date.now()}`;
+  a.download = `ch${selectedChannelId}_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.jpg`;
+  a.click();
+}
+
+function updateChannelStatus(channelId, status) {
+  const ch = channels.find(c => c.id === channelId);
+  if (ch) ch.status = status;
+  const cell = document.getElementById(`cell-${channelId}`);
+  if (cell) {
+    cell.className = `channel-cell ${status}`;
+    const badge = cell.querySelector('.channel-status');
+    if (badge) { badge.className = `channel-status ${status}`; badge.textContent = status.toUpperCase(); }
+  }
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  const dot = document.getElementById('wsStatus');
+  const txt = document.getElementById('wsText');
+
+  ws.onopen = () => { dot.className = 'connected'; txt.textContent = 'Live'; };
+  ws.onclose = () => {
+    dot.className = '';
+    txt.textContent = 'Reconnecting...';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = (e) => {
+    const { type, data } = JSON.parse(e.data);
+    if (type === 'init') {
+      channels = data.channels;
+      renderGrid();
+    } else if (type === 'channelStatus') {
+      updateChannelStatus(data.channelId, data.status);
+    }
+  };
+}
+
+async function loadDiskInfo() {
+  try {
+    const r = await fetch('/api/storage');
+    const d = await r.json();
+    const gb = (d.disk.usedKb * 1024 / 1e9).toFixed(1);
+    const total = (d.disk.totalKb * 1024 / 1e9).toFixed(1);
+    document.getElementById('diskInfo').textContent = `Storage: ${gb} / ${total} GB (${d.disk.percent}%) | ${d.database.total_recordings || 0} recordings`;
+  } catch {}
+}
+
+// Init
+setGrid(16);
+connectWS();
+loadDiskInfo();
+setInterval(loadDiskInfo, 30000);
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>

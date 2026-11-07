@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DVR - Playback & Search</title>
+<style>
+  :root {
+    --bg: #0d0d0d; --surface: #1a1a1a; --surface2: #222;
+    --border: #2a2a2a; --accent: #00b4d8; --danger: #ef233c;
+    --success: #2ecc71; --text: #e0e0e0; --text-dim: #888;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .logo { font-size: 18px; font-weight: 700; color: var(--accent); }
+  .nav-btn { background: var(--border); color: var(--text); border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-block; }
+  .nav-btn:hover { background: var(--accent); color: #000; }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* Sidebar */
+  .sidebar { width: 320px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .sidebar-section { padding: 12px; border-bottom: 1px solid var(--border); }
+  .sidebar-section h3 { font-size: 12px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 1px; }
+  label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 4px; }
+  select, input[type=date], input[type=time] {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 7px 10px; border-radius: 6px; font-size: 13px;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .search-btn { width: 100%; background: var(--accent); color: #000; border: none; padding: 9px; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 14px; margin-top: 4px; }
+  .search-btn:hover { opacity: 0.9; }
+
+  /* Results list */
+  .results-list { flex: 1; overflow-y: auto; }
+  .result-item { padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+  .result-item:hover, .result-item.active { background: var(--surface2); }
+  .result-item.active { border-left: 3px solid var(--accent); }
+  .result-time { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .result-ch { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .result-dur { font-size: 11px; color: var(--text-dim); }
+  .no-results { padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px; }
+
+  /* Player area */
+  .player-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .player-wrap { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; position: relative; }
+  #player { max-width: 100%; max-height: 100%; width: 100%; }
+  .player-info { background: var(--surface); border-top: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 16px; }
+  #nowPlaying { font-size: 13px; color: var(--text-dim); }
+  #nowPlaying strong { color: var(--text); }
+  .dl-btn { background: var(--border); color: var(--text); border: none; padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; margin-left: auto; }
+  .dl-btn:hover { background: var(--accent); color: #000; }
+
+  /* Loading spinner */
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.14/dist/hls.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="logo">&#9654; DVR PLAYBACK</div>
+  <div style="display:flex;gap:8px">
+    <a href="/" class="nav-btn">&#8592; Live View</a>
+    <a href="settings.html" class="nav-btn">Settings</a>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Sidebar: Search + Results -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>Search Recordings</h3>
+      <div style="margin-bottom:8px">
+        <label>Channel</label>
+        <select id="channelSelect">
+          <option value="">All Channels</option>
+        </select>
+      </div>
+      <div class="row2" style="margin-bottom:8px">
+        <div>
+          <label>From Date</label>
+          <input type="date" id="fromDate">
+        </div>
+        <div>
+          <label>To Date</label>
+          <input type="date" id="toDate">
+        </div>
+      </div>
+      <div class="row2" style="margin-bottom:8px">
+        <div>
+          <label>From Time</label>
+          <input type="time" id="fromTime" value="00:00">
+        </div>
+        <div>
+          <label>To Time</label>
+          <input type="time" id="toTime" value="23:59">
+        </div>
+      </div>
+      <button class="search-btn" onclick="doSearch()">&#128269; Search</button>
+    </div>
+
+    <div class="results-list" id="resultsList">
+      <div class="no-results">Set a date range and search.</div>
+    </div>
+  </div>
+
+  <!-- Player -->
+  <div class="player-area">
+    <div class="player-wrap" id="playerWrap">
+      <video id="player" controls autoplay playsinline></video>
+    </div>
+    <div class="player-info">
+      <div id="nowPlaying">Select a recording to play</div>
+      <button class="dl-btn" onclick="download()" id="dlBtn" style="display:none">&#8595; Download</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let hls = null;
+let currentUrl = null;
+let searchResults = [];
+
+// Set default date to today
+const today = new Date().toISOString().slice(0, 10);
+const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+document.getElementById('fromDate').value = yesterday;
+document.getElementById('toDate').value = today;
+
+async function loadChannels() {
+  try {
+    const r = await fetch('/api/channels');
+    const d = await r.json();
+    const sel = document.getElementById('channelSelect');
+    d.channels.forEach(ch => {
+      const opt = document.createElement('option');
+      opt.value = ch.id;
+      opt.textContent = `CH${ch.id} - ${ch.name}`;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load channels:', e);
+  }
+}
+
+async function doSearch() {
+  const channelId = document.getElementById('channelSelect').value;
+  const fromDate = document.getElementById('fromDate').value;
+  const toDate = document.getElementById('toDate').value;
+  const fromTime = document.getElementById('fromTime').value;
+  const toTime = document.getElementById('toTime').value;
+
+  if (!fromDate || !toDate) { alert('Please set date range'); return; }
+
+  const from = new Date(`${fromDate}T${fromTime}:00`).toISOString();
+  const to   = new Date(`${toDate}T${toTime}:59`).toISOString();
+
+  const params = new URLSearchParams({ from, to, limit: 200 });
+  if (channelId) params.set('channel', channelId);
+
+  document.getElementById('resultsList').innerHTML = `<div style="padding:20px;text-align:center"><div class="spinner" style="margin:auto"></div></div>`;
+
+  try {
+    const r = await fetch(`/api/search?${params}`);
+    const d = await r.json();
+    searchResults = d.recordings || [];
+    renderResults();
+  } catch (e) {
+    document.getElementById('resultsList').innerHTML = `<div class="no-results">Search failed: ${e.message}</div>`;
+  }
+}
+
+function renderResults() {
+  const list = document.getElementById('resultsList');
+  if (!searchResults.length) {
+    list.innerHTML = `<div class="no-results">No recordings found for this period.</div>`;
+    return;
+  }
+
+  list.innerHTML = searchResults.map((rec, i) => {
+    const start = new Date(rec.start_time * 1000);
+    const dur = rec.duration_seconds ? formatDur(rec.duration_seconds) : '—';
+    const size = rec.file_size ? (rec.file_size / 1e6).toFixed(1) + ' MB' : '';
+    return `
+      <div class="result-item" id="res-${i}" onclick="playRecording(${i})">
+        <div class="result-time">${start.toLocaleString()}</div>
+        <div class="result-ch">CH${rec.channel_id} — ${rec.channel_name || ''}</div>
+        <div class="result-dur">${dur} ${size ? '· ' + size : ''}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function playRecording(index) {
+  const rec = searchResults[index];
+  if (!rec) return;
+
+  document.querySelectorAll('.result-item').forEach(el => el.classList.remove('active'));
+  document.getElementById(`res-${index}`)?.classList.add('active');
+
+  const video = document.getElementById('player');
+  currentUrl = rec.url;
+
+  if (hls) { hls.destroy(); hls = null; }
+
+  if (rec.url.endsWith('.m3u8') && Hls.isSupported()) {
+    hls = new Hls();
+    hls.loadSource(rec.url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+  } else {
+    video.src = rec.url;
+    video.load();
+    video.play().catch(() => {});
+  }
+
+  const start = new Date(rec.start_time * 1000);
+  document.getElementById('nowPlaying').innerHTML =
+    `<strong>CH${rec.channel_id} — ${rec.channel_name}</strong> &nbsp; ${start.toLocaleString()} &nbsp; (${formatDur(rec.duration_seconds || 0)})`;
+  document.getElementById('dlBtn').style.display = 'inline-block';
+}
+
+function download() {
+  if (!currentUrl) return;
+  const a = document.createElement('a');
+  a.href = currentUrl;
+  a.download = currentUrl.split('/').pop();
+  a.click();
+}
+
+function formatDur(s) {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+loadChannels();
+</script>
+</body>
+</html>

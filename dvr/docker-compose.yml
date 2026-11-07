@@ -1,0 +1,30 @@
+version: "3.9"
+
+# DVR System — run on local PC with Docker
+# Usage:
+#   cp server/config.sample.json server/config.json
+#   # Edit config.json with your camera RTSP URLs
+#   docker compose up -d
+
+services:
+  dvr-server:
+    build: ./server
+    container_name: dvr-server
+    restart: unless-stopped
+    network_mode: host      # needed for RTSP camera access on local LAN
+    environment:
+      - DVR_CONFIG=/app/config.json
+    volumes:
+      - ./server/config.json:/app/config.json:ro
+      - ${SSD_PATH:-/mnt/ssd}/recordings:/recordings
+      - dvr-streams:/tmp/dvr-streams
+    ports:
+      - "7000:7000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7000/api/storage"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  dvr-streams:
