@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Movie Playout — Control Room</title>
+<style>
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --border:   #30363d;
+  --text:     #e6edf3;
+  --muted:    #8b949e;
+  --accent:   #58a6ff;
+  --green:    #3fb950;
+  --yellow:   #d29922;
+  --red:      #f85149;
+  --onair:    #ff4444;
+  --radius:   8px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg);
+       color: var(--text); min-height: 100vh; }
+a { color: var(--accent); }
+
+/* ── Layout ── */
+header { background: var(--surface); border-bottom: 1px solid var(--border);
+         padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: .04em;
+            text-transform: uppercase; color: var(--accent); }
+#clock { margin-left: auto; font-variant-numeric: tabular-nums;
+         font-size: .85rem; color: var(--muted); }
+main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+section { margin-bottom: 28px; }
+h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .1em;
+     color: var(--muted); margin-bottom: 12px; }
+
+/* ── Channels grid ── */
+.channels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 900px) { .channels { grid-template-columns: 1fr; } }
+
+.channel-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; position: relative;
+  transition: border-color .2s;
+}
+.channel-card.on-air { border-color: var(--onair); }
+.channel-card.error  { border-color: var(--red); }
+
+.ch-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ch-name  { font-weight: 600; font-size: .95rem; }
+.ch-genre { font-size: .75rem; color: var(--muted); }
+.badge { display: inline-flex; align-items: center; gap: 4px;
+         padding: 2px 8px; border-radius: 20px; font-size: .68rem;
+         font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.badge-onair  { background: var(--onair); color: #fff; }
+.badge-idle   { background: #2d333b; color: var(--muted); }
+.badge-error  { background: var(--red); color: #fff; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+       animation: blink 1s step-end infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.badge-idle .dot { animation: none; opacity: .5; }
+
+.now-label  { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+              color: var(--muted); margin-bottom: 2px; }
+.now-title  { font-size: 1rem; font-weight: 600; white-space: nowrap;
+              overflow: hidden; text-overflow: ellipsis; }
+.now-meta   { font-size: .75rem; color: var(--muted); margin-top: 2px; }
+
+/* progress bar */
+.progress-wrap { background: #2d333b; border-radius: 4px; height: 4px;
+                 margin: 10px 0; overflow: hidden; }
+.progress-bar  { height: 100%; background: var(--accent); border-radius: 4px;
+                 transition: width .5s linear; }
+
+.next-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+              color: var(--muted); margin-top: 10px; margin-bottom: 2px; }
+.next-title { font-size: .85rem; white-space: nowrap; overflow: hidden;
+              text-overflow: ellipsis; color: var(--muted); }
+
+/* ── Schedule table ── */
+.schedule-tabs { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.tab-btn { background: #2d333b; border: 1px solid var(--border); border-radius: 6px;
+           color: var(--text); padding: 4px 14px; font-size: .78rem; cursor: pointer; }
+.tab-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th,td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; }
+tr:hover td { background: #21262d; }
+.status-badge { padding: 1px 7px; border-radius: 10px; font-size: .68rem;
+                font-weight: 600; text-transform: uppercase; }
+.s-scheduled { background: #1f3f72; color: #79c0ff; }
+.s-playing   { background: #3d1a1a; color: var(--onair); }
+.s-done      { background: #1a2d1a; color: var(--green); }
+.s-skipped   { background: #2d2d1a; color: var(--yellow); }
+
+/* ── Catalog ── */
+.catalog-controls { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+       background: #2d333b; color: var(--text); font-size: .78rem; cursor: pointer;
+       transition: background .15s; }
+.btn:hover { background: #373e47; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.btn-primary:hover { background: #79c0ff; }
+.btn-sm { padding: 3px 10px; font-size: .72rem; }
+.btn-warn { background: #3d2a00; border-color: var(--yellow); color: var(--yellow); }
+.btn-warn:hover { background: #4d3600; }
+
+/* ── AI Workers panel ── */
+.workers-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+@media (max-width: 700px) { .workers-grid { grid-template-columns: 1fr; } }
+.worker-card { background: var(--surface); border: 1px solid var(--border);
+               border-radius: var(--radius); padding: 14px; }
+.worker-name { font-weight: 600; font-size: .88rem; margin-bottom: 4px; }
+.worker-desc { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
+.worker-last { font-size: .72rem; color: var(--muted); margin-top: 8px; }
+
+/* ── Health report ── */
+.health-card { background: var(--surface); border: 1px solid var(--border);
+               border-radius: var(--radius); padding: 14px; }
+.severity-OK    { border-left: 3px solid var(--green); }
+.severity-WARN  { border-left: 3px solid var(--yellow); }
+.severity-ERROR { border-left: 3px solid var(--red); }
+
+/* ── Log ── */
+.log-wrap { background: #0d1117; border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 10px 14px;
+            max-height: 220px; overflow-y: auto; font-family: monospace;
+            font-size: .75rem; }
+.log-INFO  { color: var(--text); }
+.log-WARN  { color: var(--yellow); }
+.log-ERROR { color: var(--red); }
+
+/* Toast */
+#toast { position: fixed; bottom: 20px; right: 20px; background: #21262d;
+         border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px;
+         font-size: .82rem; opacity: 0; transition: opacity .3s; z-index: 100; }
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2">
+    <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/><path d="M8 7V5a2 2 0 0 0-4 0v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
+  </svg>
+  <h1>Movie Playout — Control Room</h1>
+  <span id="deepseek-badge" style="font-size:.72rem;padding:2px 8px;background:#1a3a1a;border:1px solid var(--green);border-radius:10px;color:var(--green)">DeepSeek AI</span>
+  <span id="clock"></span>
+</header>
+
+<main>
+
+<!-- ── Channels ── -->
+<section>
+  <h2>Live Channels</h2>
+  <div class="channels" id="channels-grid">
+    <div class="channel-card" id="ch1"></div>
+    <div class="channel-card" id="ch2"></div>
+    <div class="channel-card" id="ch3"></div>
+  </div>
+</section>
+
+<!-- ── Schedule ── -->
+<section>
+  <h2>24-Hour Schedule</h2>
+  <div class="schedule-tabs">
+    <button class="tab-btn active" onclick="showSchedule(1)">Channel 1</button>
+    <button class="tab-btn"       onclick="showSchedule(2)">Channel 2</button>
+    <button class="tab-btn"       onclick="showSchedule(3)">Channel 3</button>
+  </div>
+  <div id="schedule-table"></div>
+</section>
+
+<!-- ── Catalog ── -->
+<section>
+  <h2>Movie Catalog</h2>
+  <div class="catalog-controls">
+    <button class="btn btn-primary" onclick="runMetadataWorker()">AI Enrich All</button>
+    <button class="btn" onclick="loadCatalog()">Refresh</button>
+  </div>
+  <div id="catalog-table"></div>
+</section>
+
+<!-- ── AI Workers ── -->
+<section>
+  <h2>AI Workers (DeepSeek)</h2>
+  <div class="workers-grid">
+    <div class="worker-card">
+      <div class="worker-name">Schedule Filler</div>
+      <div class="worker-desc">Fills programme gaps for all 3 channels using DeepSeek reasoning. Runs every 60 min.</div>
+      <button class="btn btn-primary" onclick="runWorker('schedule')">Run Now</button>
+      <div class="worker-last" id="w-sched-last">—</div>
+    </div>
+    <div class="worker-card">
+      <div class="worker-name">Metadata Enricher</div>
+      <div class="worker-desc">Generates plot summaries, genre tags and ratings for un-enriched movies. Runs every 30 min.</div>
+      <button class="btn btn-primary" onclick="runWorker('metadata')">Run Now</button>
+      <div class="worker-last" id="w-meta-last">—</div>
+    </div>
+    <div class="worker-card">
+      <div class="worker-name">Operations Monitor</div>
+      <div class="worker-desc">Analyses playout logs for anomalies and writes health reports. Runs every 15 min.</div>
+      <button class="btn btn-primary" onclick="runWorker('monitor')">Run Now</button>
+      <div class="worker-last" id="w-mon-last">—</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Health ── -->
+<section>
+  <h2>System Health</h2>
+  <div class="health-card severity-OK" id="health-card">Loading…</div>
+</section>
+
+<!-- ── Log ── -->
+<section>
+  <h2>Playout Log <span style="font-weight:400;font-size:.75rem;color:var(--muted)" id="log-ch-label">(all channels)</span></h2>
+  <div class="log-wrap" id="log-wrap"></div>
+</section>
+
+</main>
+<div id="toast"></div>
+
+<script>
+const API = '';
+let schedCh = 1;
+
+// ── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toUTCString().replace('GMT','UTC');
+}
+updateClock(); setInterval(updateClock, 1000);
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function toast(msg, ms=2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), ms);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function fmtDuration(secs) {
+  const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso+'Z');
+  return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Channel cards ─────────────────────────────────────────────────────────
+async function loadChannels() {
+  const data = await fetch(`${API}/api/channels`).then(r=>r.json()).catch(()=>[]);
+  const states = {ON_AIR:'onair', IDLE:'idle', ERROR:'error'};
+  data.forEach(ch => {
+    const el = document.getElementById(`ch${ch.id}`);
+    if (!el) return;
+    const st = ch.state || 'IDLE';
+    el.className = `channel-card ${st==='ON_AIR'?'on-air':st==='ERROR'?'error':''}`;
+    const cur = ch.current;
+    const nxt = ch.next;
+    const badgeCls = st==='ON_AIR'?'badge-onair':st==='ERROR'?'badge-error':'badge-idle';
+    el.innerHTML = `
+      <div class="ch-header">
+        <div>
+          <div class="ch-name">${ch.name}</div>
+          <div class="ch-genre">${ch.genre_focus}</div>
+        </div>
+        <span class="badge ${badgeCls}" style="margin-left:auto">
+          <span class="dot"></span>${st.replace('_',' ')}
+        </span>
+      </div>
+      <div class="now-label">NOW PLAYING</div>
+      <div class="now-title">${cur ? cur.title : '— No Content —'}</div>
+      ${cur ? `<div class="now-meta">${cur.genre||''} · ${fmtDuration(cur.duration_secs)} · ★ ${cur.rating||'?'}</div>` : ''}
+      <div class="progress-wrap">
+        <div class="progress-bar" style="width:${ch.progress_pct||0}%"></div>
+      </div>
+      ${cur ? `<div class="now-meta">${fmtDuration(ch.elapsed_secs)} elapsed · ${fmtDuration(ch.remaining_secs)} remaining</div>` : ''}
+      <div class="next-label">UP NEXT</div>
+      <div class="next-title">${nxt ? `${fmtTime(nxt.start_time)} — ${nxt.title}` : '— Nothing scheduled —'}</div>
+    `;
+  });
+}
+
+// ── Schedule ──────────────────────────────────────────────────────────────
+function showSchedule(ch) {
+  schedCh = ch;
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>
+    b.classList.toggle('active', i+1===ch));
+  loadSchedule();
+}
+
+async function loadSchedule() {
+  const rows = await fetch(`${API}/api/channels/${schedCh}/schedule?hours=24`)
+    .then(r=>r.json()).catch(()=>[]);
+  const tbody = rows.map(r => {
+    const sc = r.status||'scheduled';
+    return `<tr>
+      <td>${fmtTime(r.start_time)}</td>
+      <td>${fmtTime(r.end_time)}</td>
+      <td>${r.title}</td>
+      <td>${r.genre||'—'}</td>
+      <td>${fmtDuration(r.duration_secs)}</td>
+      <td><span class="status-badge s-${sc}">${sc}</span></td>
+      <td>${sc==='scheduled'?`<button class="btn btn-sm btn-warn" onclick="skipItem(${r.id})">Skip</button>`:''}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('schedule-table').innerHTML = `
+    <table><thead><tr>
+      <th>Start</th><th>End</th><th>Movie</th><th>Genre</th><th>Duration</th><th>Status</th><th></th>
+    </tr></thead><tbody>${tbody||'<tr><td colspan="7" style="color:var(--muted)">No schedule yet — run the AI Scheduler.</td></tr>'}</tbody></table>`;
+}
+
+async function skipItem(id) {
+  await fetch(`${API}/api/schedule/${id}/skip`, {method:'POST'});
+  toast('Skipped'); loadSchedule();
+}
+
+// ── Catalog ───────────────────────────────────────────────────────────────
+async function loadCatalog() {
+  const movies = await fetch(`${API}/api/catalog`).then(r=>r.json()).catch(()=>[]);
+  const rows = movies.map(m => `<tr>
+    <td>${m.title}</td>
+    <td>${m.year||'—'}</td>
+    <td>${m.genre||'—'}</td>
+    <td>${fmtDuration(m.duration_secs)}</td>
+    <td>${m.rating?`★ ${m.rating}`:'—'}</td>
+    <td style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:.72rem">${m.description||''}</td>
+    <td><span style="color:${m.ai_enriched?'var(--green)':'var(--muted)'};font-size:.72rem">${m.ai_enriched?'✓ AI':'—'}</span></td>
+    <td><button class="btn btn-sm" onclick="enrichOne(${m.id},'${m.title.replace(/'/g,"\\'")}')">Enrich</button></td>
+  </tr>`).join('');
+  document.getElementById('catalog-table').innerHTML = `
+    <table><thead><tr>
+      <th>Title</th><th>Year</th><th>Genre</th><th>Duration</th><th>Rating</th><th>Description</th><th>AI</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function enrichOne(id, title) {
+  toast(`Enriching "${title}"…`, 4000);
+  const r = await fetch(`${API}/api/catalog/${id}/enrich`, {method:'POST'}).then(x=>x.json()).catch(e=>({error:String(e)}));
+  if (r.error) { toast(`Error: ${r.error}`, 4000); } else { toast('Enriched!'); loadCatalog(); }
+}
+
+// ── AI Workers ────────────────────────────────────────────────────────────
+async function runWorker(type) {
+  toast(`Running ${type} worker…`, 5000);
+  const map = {schedule:'schedule', metadata:'metadata', monitor:'monitor'};
+  const r = await fetch(`${API}/api/workers/${type}/run`, {method:'POST'})
+    .then(x=>x.json()).catch(e=>({error:String(e)}));
+  if (r.error) { toast(`Error: ${r.error}`, 5000); return; }
+  toast(`${type} done: ${JSON.stringify(r)}`);
+  if (type==='schedule') { loadSchedule(); loadChannels(); }
+  if (type==='metadata') loadCatalog();
+  if (type==='monitor')  loadHealth();
+  loadTasks();
+}
+
+function runMetadataWorker() { runWorker('metadata'); }
+
+async function loadTasks() {
+  const tasks = await fetch(`${API}/api/workers/tasks`).then(r=>r.json()).catch(()=>[]);
+  const byType = {};
+  tasks.forEach(t => { if (!byType[t.task_type]) byType[t.task_type] = t; });
+  if (byType.scheduler) document.getElementById('w-sched-last').textContent =
+    `Last: ${byType.scheduler.finished_at||'—'} — ${byType.scheduler.result||''}`;
+  if (byType.metadata)  document.getElementById('w-meta-last').textContent =
+    `Last: ${byType.metadata.finished_at||'—'} — ${byType.metadata.result||''}`;
+  if (byType.monitor)   document.getElementById('w-mon-last').textContent =
+    `Last: ${byType.monitor.finished_at||'—'}`;
+}
+
+// ── Health ────────────────────────────────────────────────────────────────
+async function loadHealth() {
+  const h = await fetch(`${API}/api/workers/health`).then(r=>r.json()).catch(()=>({}));
+  const card = document.getElementById('health-card');
+  card.className = `health-card severity-${h.severity||'OK'}`;
+  const sev = h.severity||'OK';
+  const sevColor = sev==='OK'?'var(--green)':sev==='WARN'?'var(--yellow)':'var(--red)';
+  const detail = h.detail_parsed || {};
+  const issues = (detail.issues||[]).map(i=>`<li>${i}</li>`).join('');
+  const recs = (detail.recommendations||[]).map(r=>`<li>${r}</li>`).join('');
+  card.innerHTML = `
+    <div style="font-size:.8rem;font-weight:700;color:${sevColor};margin-bottom:6px">${sev}</div>
+    <div style="font-size:.88rem">${h.summary||'No report yet.'}</div>
+    ${issues?`<ul style="margin-top:8px;padding-left:18px;font-size:.78rem;color:var(--yellow)">${issues}</ul>`:''}
+    ${recs?`<ul style="margin-top:6px;padding-left:18px;font-size:.78rem;color:var(--muted)">${recs}</ul>`:''}
+    <div style="margin-top:8px;font-size:.7rem;color:var(--muted)">${h.created_at||''}</div>`;
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────
+async function loadLog() {
+  const rows = await fetch(`${API}/api/channels/1/log?limit=40`)
+    .then(r=>r.json()).catch(()=>[]);
+  // merge logs from all 3 channels
+  const [l2, l3] = await Promise.all([
+    fetch(`${API}/api/channels/2/log?limit=40`).then(r=>r.json()).catch(()=>[]),
+    fetch(`${API}/api/channels/3/log?limit=40`).then(r=>r.json()).catch(()=>[]),
+  ]);
+  const all = [...rows, ...l2, ...l3].sort((a,b)=>b.id-a.id).slice(0,60);
+  const wrap = document.getElementById('log-wrap');
+  wrap.innerHTML = all.map(r =>
+    `<div class="log-${r.level}"><span style="color:var(--muted)">[${r.ts}]</span> `+
+    `<span style="color:var(--accent)">CH${r.channel_id}</span> `+
+    `<span style="color:${r.level==='WARN'?'var(--yellow)':r.level==='ERROR'?'var(--red)':'var(--muted)'}">${r.level}</span> `+
+    `${r.event} ${r.detail||''}</div>`
+  ).join('') || '<div style="color:var(--muted)">No log entries yet.</div>';
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────
+async function refreshAll() {
+  await loadChannels();
+  loadSchedule();
+}
+
+function init() {
+  loadChannels();
+  loadSchedule();
+  loadCatalog();
+  loadHealth();
+  loadTasks();
+  loadLog();
+}
+
+init();
+setInterval(loadChannels, 5000);
+setInterval(()=>{ loadSchedule(); loadLog(); }, 15000);
+setInterval(()=>{ loadHealth(); loadTasks(); }, 30000);
+setInterval(loadCatalog, 60000);
+</script>
+</body>
+</html>
